@@ -2,15 +2,25 @@ from langchain.tools import Tool
 import math
 import re
 
-def calculator(expression: str) -> str:
-    try:
-        result = eval(expression, {"__builtins__": {}}, math.__dict__)
-        return str(result), 1.0
-    except Exception as e:
-        return f"Calculation error: {str(e)}", 0.0
+import math
 
-math_tool = Tool(
-    name="Calculator",
-    func=calculator,
-    description="Evaluates a math expression."
-)
+def math_tool(expression: str):
+    """
+    Evaluate a math expression safely and return the result.
+
+    Supported:
+    - Basic arithmetic: +, -, *, /
+    - Functions: sqrt, log, sin, cos, etc. (from math module)
+    """
+    try:
+        # Define a safe environment
+        allowed_names = {k: v for k, v in math.__dict__.items() if not k.startswith("__")}
+        
+        # Optional: add custom functions/constants
+        allowed_names["abs"] = abs
+        allowed_names["pow"] = pow
+
+        result = eval(expression, {"__builtins__": {}}, allowed_names)
+        return round(result, 5), None
+    except Exception as e:
+        return f"Error evaluating expression: {e}", None
