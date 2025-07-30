@@ -63,11 +63,11 @@ def agentic_chatbot(question):
     full_prompt = f"{SYSTEM_PROMPT}\n\n{history}"
 
     while True:
-        # 获取模型响应
+        # reponse
         response, _ = tinyllama_tool(full_prompt)
         print("MODEL RESPONSE:\n", response)
 
-        # 添加 assistant 响应到历史
+        # add to history
         history += response + "\n"
         full_prompt = f"{SYSTEM_PROMPT}\n\n{history}"
 
@@ -76,7 +76,7 @@ def agentic_chatbot(question):
             print("Model returned Final Answer, stopping.")
             break
 
-        # 查找工具调用
+        # tools
         action_found = False
         for line in response.split("\n"):
             line = line.strip()
@@ -95,12 +95,12 @@ def agentic_chatbot(question):
                     observation = f"Observation: {result}"
 
 
-                # 添加 Observation 到历史
+                # add Observation 
                 history += observation + "\n"
                 full_prompt = f"{SYSTEM_PROMPT}\n\n{history}"
                 print("MODEL RESPONSE:\n", history)
                 action_found = True
-                break  # 每次只执行一个工具调用
+                break  
 
         if not action_found:
             print("No tool action found and no final answer; stopping.")
