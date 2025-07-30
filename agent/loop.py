@@ -1,98 +1,110 @@
-# Planner
-import re
 
 
+
 import re
-from tools.math_tool import math_tool
+
 from tools.web_search_tool import web_search_tool
 from tools.tinyllama_tool import tinyllama_tool  # your local LLM wrapper
 from tools.image_tool import ImageAnalyzer
-import json
-import uuid
+from tools.math_tool import  math_tool
 
 TOOLS = {
-    "calculator": math_tool,
-    "web": web_search_tool,
-    "image_gen": ImageAnalyzer, 
+    "Web": web_search_tool,
+    "Calculator": math_tool,  
 }
 
+
 # Prompt templates
-SYSTEM_PROMPT = """You are a helpful agent. You can use these tools:
+SYSTEM_PROMPT = """You are a helpful assistant that reasons and acts in a step-by-step way.
+Only perform one step of reasoning unless multiple steps are clearly required.
+Do not invent extra steps or questions beyond what the user asked.
+YOU are only soving one question one at a time.
+You use this format:
+Thought: reason about the task
+Action: tool_name[parameter=value, ...]
+Observation: 
+...
 
-- calculator[expression=...] → for math
-- web[query=...] → for current facts
-- image_gen[prompt=...] → to generate an image from a text description
+Final Answer: your final conclusion
 
-Use this pattern when needed:
-Action: tool_name[key=value]
-Wait for an Observation before continuing. End with:
-Final Answer: your final response.
-"""
-EXAMPLES = """Question: What is 5 * 7?
-Thought: I need a tool for math calculations.
-Action: calculator[expression=5*7]
-Observation: 35
-Final Answer: 5 times 7 is 35.
-
-Question: What's the current weather in Paris?
-Thought: I need to look up the weather online.
-Action: web[query=weather in Paris]
-Observation: It's currently 23°C in Paris.
-Final Answer: The current weather in Paris is 23°C.
-
-Question: Can you show me a fantasy landscape with a purple sky and floating islands?
-Thought: I need to generate an image based on that description.
-Action: image_gen[prompt=fantasy landscape with a purple sky and floating islands]
-Observation: [Image generated successfully]
-Final Answer: Here's a fantasy landscape with a purple sky and floating islands.
+Available tools:
+- Calculator[expression: str] → Use this for math expressions (e.g., "2 + 3", "sqrt(144)")
+- Web[city: str] → Use this to look up current weather information
 """
 
-# Parses lines like: Action: calculator[expression=1+1]
+EXAMPLES = """
+Example 1:
+Question: What is 12*12?
+Thought: I need to calculate 12 times 12.
+Action: Calculator[expression=12*12]
+
+---
+
+"""
+
+
+
 def parse_action(line):
     match = re.match(r"Action:\s*(\w+)\[(.*)\]", line)
     if not match:
         return None, None
     tool_name, args_str = match.groups()
     args = {}
-    for pair in args_str.split(','):
-        if '=' in pair:
-            k, v = pair.split('=')
-            args[k.strip()] = v.strip()
+    for pair in args_str.split(","):
+        if "=" in pair:
+            k, v = pair.split("=", 1)
+            args[k.strip()] = v.strip().strip('"')
     return tool_name, args
+
+ 
 
 def agentic_chatbot(question):
     history = f"{EXAMPLES}\nQuestion: {question}\n"
     full_prompt = f"{SYSTEM_PROMPT}\n\n{history}"
-    
-    while True:
-        # LLM thinks
-        response, _ = tinyllama_tool(full_prompt)
-        print("🧠 Assistant:\n" + response + "\n")
 
+    while True:
+        # 获取模型响应
+        response, _ = tinyllama_tool(full_prompt)
+        print("MODEL RESPONSE:\n", response)
+
+        # 添加 assistant 响应到历史
         history += response + "\n"
-        
+        full_prompt = f"{SYSTEM_PROMPT}\n\n{history}"
+
+        # 如果包含 Final Answer，直接退出
         if "Final Answer:" in response:
+            print("Model returned Final Answer, stopping.")
             break
-        
-        # Look for tool call
+
+        # 查找工具调用
+        action_found = False
         for line in response.split("\n"):
+            line = line.strip()
             if line.startswith("Action:"):
+                print("DEBUG: original line =", line)
                 tool_name, args = parse_action(line)
-                if tool_name not in TOOLS:
-                    observation = f"Observation: Error: Unknown tool '{tool_name}'"
+                print("Parsed tool_name:", tool_name, "args:", args)
+                if not tool_name:
+                    observation = "Observation: Failed to parse action line."
+                elif tool_name not in TOOLS:
+                    observation = f"Observation: Error: Unknown tool {tool_name}"
                 else:
-                    try:
-                        result, _ = TOOLS[tool_name](**args)
-                        observation = f"Observation: {result}"
-                    except Exception as e:
-                        observation = f"Observation: Tool error: {e}"
-                
-                # Add observation and let LLM continue reasoning
+                    tool_output = TOOLS[tool_name](**args)
+                    result = tool_output[0] if isinstance(tool_output, tuple) else tool_output
+                    print("Tool used:", tool_name, "with args", args, "→ result:", result)
+                    observation = f"Observation: {result}"
+
+
+                # 添加 Observation 到历史
                 history += observation + "\n"
                 full_prompt = f"{SYSTEM_PROMPT}\n\n{history}"
-                break
+                print("MODEL RESPONSE:\n", history)
+                action_found = True
+                break  # 每次只执行一个工具调用
 
-
+        if not action_found:
+            print("No tool action found and no final answer; stopping.")
+            break
 
 def generate_subgoals(query):
    prompt = f"""
